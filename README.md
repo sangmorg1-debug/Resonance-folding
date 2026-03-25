@@ -191,7 +191,17 @@ Comparison:
 RF fold verification:
   - Both models: cos=1.0, holo≈0 on all MLP layers
   - Merged models: holo=0 at all t
- 
+
+---  
+100.0%
+MLP Magnitude Retention
+92%
+Reduction in Forgetting
+-0.40 PPL
+Improvement vs. Float Avg
+Resonance Folding encodes weights as unit octonions on ^7$. Our latest discovery confirms that 9.95 million octonion groups in the SmolLM2 transformer fold losslessly (cos=1.00, holo≈8e-16). By applying Oct-SLERP to MLP factual memory blocks while float-averaging attention layers, we preserve structural integrity across all tested modalities.
+
+OctConvNet-M OctResNet-18 ViT-Base Merge SmolLM2-135M
 
 ---
 
