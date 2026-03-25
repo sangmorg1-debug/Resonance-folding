@@ -44,6 +44,8 @@ from .algebra import (
 from .arch import (
     OctBlock,
     OctConvNet,
+    OctBasicBlock,
+    OctResNet18,
     oct_init_,
 )
 
@@ -69,7 +71,7 @@ __all__ = [
     "holo_loss", "assoc_loss",
     "oct_slerp", "task_vector", "task_vector_apply",
     # arch
-    "OctBlock", "OctConvNet", "oct_init_",
+    "OctBlock", "OctConvNet", "OctBasicBlock", "OctResNet18", "oct_init_",
     # fold
     "FoldedLayer", "fold_model", "patch_model",
     "verify_fold", "weight_to_oct", "oct_to_weight",

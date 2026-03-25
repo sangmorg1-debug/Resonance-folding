@@ -13,7 +13,7 @@ import pytest
 from resonance_folding import (
     oct_mul, oct_conj, oct_normalize, holo_loss, assoc_loss,
     oct_slerp, task_vector, task_vector_apply,
-    OctBlock, OctConvNet, oct_init_,
+    OctBlock, OctConvNet, OctBasicBlock, OctResNet18, oct_init_,
     FoldedLayer, fold_model, patch_model, verify_fold,
     weight_to_oct, oct_to_weight,
     float_average, slerp_merge, triple_slerp,
@@ -313,3 +313,69 @@ class TestMerge:
         y = merged(x)
         assert y.shape == (2, 10)
         assert holo < 1e-5, f"triple_slerp holo={holo:.2e}"
+
+
+# ─────────────────────────────────────────────────────────────
+#  OCTRESNET18
+# ─────────────────────────────────────────────────────────────
+
+class TestOctResNet18:
+
+    def test_forward_shape(self):
+        """OctResNet18 produces (B, 10) logits for CIFAR inputs."""
+        model = OctResNet18(n_classes=10, cifar=True)
+        x = torch.randn(2, 3, 32, 32)
+        y = model(x)
+        assert y.shape == (2, 10), f"Wrong output shape: {y.shape}"
+
+    def test_oct_layers_count(self):
+        """OctResNet18 has 19 oct-foldable layers (all except RGB stem)."""
+        model = OctResNet18()
+        layers = model.oct_layers()
+        assert len(layers) == 19, \
+            f"Expected 19 oct layers, got {len(layers)}"
+
+    def test_oct_layers_all_aligned(self):
+        """All oct-foldable layers have in_ch % 8 == 0."""
+        model = OctResNet18()
+        for name, conv in model.oct_layers():
+            ic = conv.weight.shape[1]
+            assert ic % 8 == 0, \
+                f"Layer {name} has in_ch={ic}, not multiple of 8"
+
+    def test_stem_not_in_oct_layers(self):
+        """RGB stem (in_ch=3) is excluded from oct_layers."""
+        model = OctResNet18()
+        oct_names = {n for n, _ in model.oct_layers()}
+        assert "stem.0" not in oct_names, "Stem should not be oct-foldable"
+
+    def test_fold_lossless(self):
+        """RF fold on OctResNet18 is lossless across all 19 layers."""
+        model = OctResNet18()
+        result = verify_fold(model, verbose=False)
+        assert result["all_lossless"], (
+            f"ResNet fold not lossless: "
+            f"mean_cos={result['mean_cos']:.6f}, "
+            f"min_cos={result['min_cos']:.6f}"
+        )
+        assert result["mean_cos"] > 0.9999
+        assert result["mean_holo"] < 1e-5
+        assert result["n_layers"] == 19
+
+    def test_oct_groups_count(self):
+        """OctResNet18 has 1,394,688 octonion kernel groups."""
+        model = OctResNet18()
+        assert model.n_oct_groups == 1_394_688, \
+            f"Expected 1,394,688 groups, got {model.n_oct_groups}"
+
+    def test_slerp_merge_valid(self):
+        """slerp_merge works on OctResNet18 checkpoints."""
+        torch.manual_seed(10)
+        a = OctResNet18(n_classes=10)
+        torch.manual_seed(11)
+        b = OctResNet18(n_classes=10)
+        merged, holo = slerp_merge(a, b, 0.5)
+        x = torch.randn(2, 3, 32, 32)
+        y = merged(x)
+        assert y.shape == (2, 10)
+        assert holo < 1e-5, f"ResNet slerp holo={holo:.2e}"

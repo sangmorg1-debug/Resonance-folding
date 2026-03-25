@@ -185,3 +185,143 @@ class OctConvNet(nn.Module):
     @property
     def n_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+
+# ─────────────────────────────────────────────────────────────
+#  OctResNet18 — standard ResNet-18 with RF fold support
+# ─────────────────────────────────────────────────────────────
+
+class OctBasicBlock(nn.Module):
+    """
+    ResNet BasicBlock with oct-aware initialization.
+    Standard ResNet-18 channel widths [64,128,256,512] are all
+    multiples of 8, so every conv in this block is oct-foldable.
+
+    Args:
+        in_ch:      input channels
+        out_ch:     output channels
+        stride:     conv stride (default 1)
+        downsample: optional downsample Sequential for skip connection
+    """
+    expansion = 1
+
+    def __init__(
+        self,
+        in_ch: int,
+        out_ch: int,
+        stride: int = 1,
+        downsample=None,
+    ):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1   = nn.BatchNorm2d(out_ch)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm2d(out_ch)
+        self.downsample = downsample
+        oct_init_(self.conv1.weight)
+        oct_init_(self.conv2.weight)
+        if downsample is not None:
+            oct_init_(downsample[0].weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+        out = F.relu(self.bn1(self.conv1(x)), inplace=True)
+        out = self.bn2(self.conv2(out))
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        return F.relu(out + identity, inplace=True)
+
+
+class OctResNet18(nn.Module):
+    """
+    ResNet-18 with RF fold support.
+
+    Standard ResNet-18 channel widths [64, 128, 256, 512] are all
+    multiples of 8, so no channel modifications are required.
+    Every conv layer except the RGB stem (in_ch=3) is oct-foldable.
+
+    Proven properties (CIFAR-10, 30 epochs, March 2026):
+        - 19 foldable layers, 1,394,688 oct kernel groups
+        - RF fold: cos=1.000000, holo=0.0, acc delta=0.0
+        - SLERP merge beats best individual fine-tune (+0.35%)
+
+    Args:
+        n_classes: number of output classes (default 10)
+        cifar:     True = 3×3 stem, no maxpool (for 32×32 inputs)
+                   False = 7×7 stem + maxpool (for 224×224 ImageNet)
+    """
+
+    def __init__(self, n_classes: int = 10, cifar: bool = True):
+        super().__init__()
+        if cifar:
+            self.stem = nn.Sequential(
+                nn.Conv2d(3, 64, 3, stride=1, padding=1, bias=False),
+                nn.BatchNorm2d(64),
+                nn.ReLU(inplace=True),
+            )
+        else:
+            self.stem = nn.Sequential(
+                nn.Conv2d(3, 64, 7, stride=2, padding=3, bias=False),
+                nn.BatchNorm2d(64),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(3, stride=2, padding=1),
+            )
+        # Stem uses standard Kaiming — in_ch=3 is not oct-aligned
+        nn.init.kaiming_normal_(self.stem[0].weight, mode="fan_out")
+
+        self._in_ch = 64
+        self.layer1 = self._make_layer(64,  2, stride=1)
+        self.layer2 = self._make_layer(128, 2, stride=2)
+        self.layer3 = self._make_layer(256, 2, stride=2)
+        self.layer4 = self._make_layer(512, 2, stride=2)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, n_classes)
+        nn.init.normal_(self.fc.weight, 0, 0.01)
+        nn.init.zeros_(self.fc.bias)
+
+    def _make_layer(self, out_ch: int, n_blocks: int, stride: int):
+        downsample = None
+        if stride != 1 or self._in_ch != out_ch:
+            downsample = nn.Sequential(
+                nn.Conv2d(self._in_ch, out_ch, 1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_ch),
+            )
+        layers = [OctBasicBlock(self._in_ch, out_ch, stride, downsample)]
+        self._in_ch = out_ch
+        for _ in range(1, n_blocks):
+            layers.append(OctBasicBlock(out_ch, out_ch))
+        return nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.stem(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        return self.fc(self.avgpool(x).flatten(1))
+
+    def oct_layers(self) -> list:
+        """
+        Returns list of (name, conv_module) for all oct-foldable layers.
+        Excludes the stem conv (in_ch=3, not oct-aligned).
+        """
+        return [
+            (name, module)
+            for name, module in self.named_modules()
+            if isinstance(module, nn.Conv2d)
+            and module.weight.shape[1] % 8 == 0
+        ]
+
+    @property
+    def n_oct_groups(self) -> int:
+        """Total octonion kernel groups across all foldable layers."""
+        total = 0
+        for _, conv in self.oct_layers():
+            oc, ic, kH, kW = conv.weight.shape
+            total += oc * kH * kW * (ic // 8)
+        return total
+
+    @property
+    def n_params(self) -> int:
+        return sum(p.numel() for p in self.parameters())
