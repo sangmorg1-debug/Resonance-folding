@@ -157,13 +157,41 @@ Each conv filter with 8 input channels is a natural 8D vector — a point on S�
 
 **The fold is a projection, not a compression.** Reconstruction is algebraically exact:
 
-```
-(kernels / norms) * norms = kernels
-```
-
 No encoder. No decoder. No training. The lossless property follows directly from the algebra.
 
 **SLERP between two unit octonions follows the great-circle arc on S⁷**, preserving algebraic structure throughout. Holographic coherence `|O * O† − I|² / 8 = 0` is verified at every merge point. Float averaging cuts through the interior of S⁷ — which is why it collapses to random chance when merging complementary models while SLERP degrades gracefully.
+RESONANCE FOLDING — CROSS-ENCODER VISION MERGE
+================================================
+Merges two CLIP vision encoders trained on different patch granularities
+via oct-SLERP on their 8-aligned MLP blocks, then benchmarks zero-shot
+image classification on CIFAR-10.
+ 
+Models:
+  A: openai/clip-vit-base-patch32  (coarse features, 32x32 patches)
+  B: openai/clip-vit-base-patch16  (fine-grained features, 16x16 patches)
+  Both: ViT-Base, hidden=768, mlp=3072, 12 layers, 8-aligned MLP blocks
+ 
+Why this is meaningful:
+  - Patch/32: strong global structure, weak fine detail, faster
+  - Patch/16: strong fine detail, better downstream accuracy, slower
+  - SLERP merge on S⁷: geodesic between their MLP representations
+  - Does the merged encoder combine both visual granularities?
+ 
+Benchmark: zero-shot CIFAR-10 classification
+  - No fine-tuning — pure geometric merge
+  - CLIP zero-shot: encode images + encode class names → cosine similarity
+  - Metric: top-1 accuracy across 10,000 test images
+ 
+Comparison:
+  - CLIP ViT-B/32 alone
+  - CLIP ViT-B/16 alone
+  - Float average merge
+  - Oct-SLERP at t=0.3, 0.5, 0.7
+ 
+RF fold verification:
+  - Both models: cos=1.0, holo≈0 on all MLP layers
+  - Merged models: holo=0 at all t
+ 
 
 ---
 
