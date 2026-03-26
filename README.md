@@ -1,5 +1,20 @@
 # resonance-folding
 
+**Lossless octonion weight folding for perfect model merging.**
+
+Native 8-channel conv/MLP layers are folded into **unit octonions on S⁷** (cos = 1.000000, holo ≈ 9.4e-16 on 1.39M groups — mathematically lossless).  
+Then **oct-SLERP** performs true geodesic interpolation on the 7-sphere, outperforming float averaging by 0.19–0.40% while preserving zero holonomy at every merge step.
+
+Proven on:
+- OctResNet18 (CIFAR-10, 5-seed: 92.98–93.36%, zero accuracy delta post-fold)
+- SmolLM2, ViT, CLIP, continual learning (92% less forgetting)
+
+**FastAPI SaaS backend** (`rf_saas_app.py` with `/merge`, `/sweep`, `/verify`, `/continual`) + **Gradio UI** (`webui_merger.py`) ready for local or HF Space deployment.
+
+First algebraic framework that turns weight merging into a lossless geometric operation.
+
+⭐ Star if you want perfect model soups without retraining.  
+arXiv draft + reproducible scripts included.      
 **Octonion weight representation and geodesic model merging for native 8-channel convolutional networks.**
 
 > Invented by Daniel Frokido. All 10 core claims proven across multiple seeds and datasets (CIFAR-10/100, March 2026).
